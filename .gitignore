@@ -3,3 +3,7 @@
 .env
 
 db/*
+configdb/*
+
+# compiled binary
+twittervotes/twittervotes
