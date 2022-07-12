@@ -66,9 +66,8 @@ var db *mgo.Session
 
 func dialdb() error {
 	var err error
-	log.Println("MongoDBにダイヤル中: localhost")
-	db, err = mgo.Dial(
-		"mongo:27017")
+	log.Println("MongoDBにダイヤル中")
+	db, err = mgo.Dial("mongo")
 	return err
 }
 
@@ -83,8 +82,10 @@ type poll struct {
 
 func loadOptions() ([]string, error) {
 	var options []string
+	// イテレータを取得
 	iter := db.DB("ballots").C("polls").Find(nil).Iter()
 	var p poll
+	// それぞれの調査項目に順次アクセスする
 	for iter.Next(&p) {
 		options = append(options, p.Options...)
 	}

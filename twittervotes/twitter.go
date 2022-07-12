@@ -16,8 +16,11 @@ import (
 	"time"
 )
 
+// リクエストが行われたgoroutineの外部から接続を閉じることを可能にするためnet.Connを利用
 var conn net.Conn
 
+// DBから取得した選択肢に関する最新のデータを反映させるために、
+// 定期的に接続を閉じて接続し直す
 func dial(netw, addr string) (net.Conn, error) {
 	if conn != nil {
 		conn.Close()
@@ -33,10 +36,12 @@ func dial(netw, addr string) (net.Conn, error) {
 
 var reader io.ReadCloser
 
+// プログラム終了時に呼び出される
 func closeConn() {
 	if conn != nil {
 		conn.Close()
 	}
+	// レスポンス本体を読み込むのに使われるio.ReadCloserも閉じる必要がある
 	if reader != nil {
 		reader.Close()
 	}
@@ -99,6 +104,7 @@ type tweet struct {
 	Text string
 }
 
+// votesという送信専用のチャネルを受け取り、Twitter上で投票が行われたことを通知する
 func readFromTwitter(votes chan<- string) {
 	// すべての投票での選択肢を取得
 	options, err := loadOptions()
