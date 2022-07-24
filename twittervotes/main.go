@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"github.com/nsqio/go-nsq"
-	"gopkg.in/mgo.v2"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"os"
 	"os/signal"
@@ -62,17 +65,24 @@ func main() {
 	<-publisherStoppedChan
 }
 
-var db *mgo.Session
+var db *mongo.Client
 
 func dialdb() error {
 	var err error
 	log.Println("MongoDBにダイヤル中")
-	db, err = mgo.Dial("mongo")
+	credential := options.Credential{
+		Username: "root",
+		Password: "password",
+	}
+	clientOpts := options.Client().ApplyURI("mongodb://mongo:27017").SetAuth(credential)
+	db, err = mongo.Connect(context.TODO(), clientOpts)
 	return err
 }
 
 func closedb() {
-	db.Close()
+	if err := db.Disconnect(context.TODO()); err != nil {
+		log.Fatalln("データベース接続を閉じることに失敗しました:", err)
+	}
 	log.Println("データベース接続が閉じられました")
 }
 
@@ -83,14 +93,21 @@ type poll struct {
 func loadOptions() ([]string, error) {
 	var options []string
 	// イテレータを取得
-	iter := db.DB("ballots").C("polls").Find(nil).Iter()
-	var p poll
-	// それぞれの調査項目に順次アクセスする
-	for iter.Next(&p) {
-		options = append(options, p.Options...)
+	filter := bson.D{}
+	cursor, err := db.Database("ballots").Collection("polls").Find(context.TODO(), filter)
+	if err != nil {
+		log.Fatalln(err)
 	}
-	iter.Close()
-	return options, iter.Err()
+
+	var results []poll
+	if err = cursor.All(context.TODO(), &results); err != nil {
+		log.Fatalln(err)
+	}
+	for _, result := range results {
+		options = append(options, result.Options...)
+	}
+
+	return options, err
 }
 
 func publishVotes(votes <-chan string) <-chan struct{} {
