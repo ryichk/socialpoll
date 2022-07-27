@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"github.com/nsqio/go-nsq"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"os"
 	"os/signal"
@@ -33,16 +35,26 @@ func main() {
 	}()
 
 	log.Println("データベースに接続します...")
-	db, err := mgo.Dial("mongo")
+	credential := options.Credential{
+		Username: "root",
+		Password: "password",
+	}
+	clientOpts := options.Client().ApplyURI("mongodb://mongo:27017").SetAuth(credential)
+	db, err := mongo.Connect(context.TODO(), clientOpts)
 	if err != nil {
-		fatal(err)
+		log.Fatalln("データベース接続に失敗しました:", err)
 		return
 	}
+
 	defer func() {
 		log.Println("データベース接続を閉じます...")
-		db.Close()
+		if err := db.Disconnect(context.TODO()); err != nil {
+			log.Fatalln("データベース接続を閉じることに失敗しました:", err)
+		}
+		log.Println("データベース接続が閉じられました")
 	}()
-	pollData := db.DB("ballots").C("polls")
+
+	pollData := db.Database("ballots").Collection("polls")
 
 	var countsLock sync.Mutex
 	var counts map[string]int
@@ -81,9 +93,9 @@ func main() {
 			log.Println(counts)
 			ok := true
 			for option, count := range counts {
-				sel := bson.M{"options": bson.M{"$in": []string{option}}}
-				up := bson.M{"$inc": bson.M{"results." + option: count}}
-				if _, err := pollData.UpdateAll(sel, up); err != nil {
+				filter := bson.M{"options": bson.M{"$in": []string{option}}}
+				update := bson.M{"$inc": bson.M{"results." + option: count}}
+				if _, err := pollData.UpdateMany(context.TODO(), filter, update); err != nil {
 					log.Println("更新に失敗しました:", err)
 					ok = false
 					continue
